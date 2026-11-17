@@ -126,8 +126,11 @@ test('snowpack_by_state: Colorado statewide percent of median, counts and rankin
   assert.equal(r.stations.length, 118);
   assert.match(r.summary, /^Colorado SNOTEL snowpack as of 2026-11-16: 118 of 118 active stations reported in the last 3 days, 81 with snow on the ground\. Snow water equivalent is 72% of the 30-year median/);
   assert.match(r.summary, /Deepest: Beartown 33 in\./);
-  assert.equal(seen.length, 2);
-  assert.ok(seen[1].includes('stationTriplets=*:CO:SNTL'));
+  assert.equal(seen.length, 5, 'stations + 4 parallel reads of up to 30 named stations');
+  const asked = seen.slice(1).flatMap((u) => /stationTriplets=([^&]+)/.exec(u)[1].split(','));
+  assert.equal(asked.length, 118); assert.equal(new Set(asked).size, 118);
+  assert.equal(r.typical_median_swe_in, 2);
+  assert.match(r.summary, /The typical median is only 2 in of SWE for the date \(early or late season\), so station percents swing widely/);
   const byPct = await snowpackByState(f, { state: 'CO', sort: 'pct_of_median' }, NOW);
   const p = byPct.stations.map((s) => s.pct_of_median ?? -1);
   assert.deepEqual(p, [...p].sort((x, y) => y - x));

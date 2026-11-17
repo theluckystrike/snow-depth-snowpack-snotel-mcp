@@ -26,6 +26,7 @@ export const STATION_PAGE = (t: Station) => `https://wcc.sc.egov.usda.gov/nwcc/s
 export const STATIONS_TTL = 86400 * 7;
 export const DATA_TTL = 3600;
 export const PAST_TTL = 86400 * 30;
+export const STATE_CHUNK = 30;
 
 export class InputError extends Error {}
 export class UpstreamError extends Error {}
@@ -158,7 +159,7 @@ export const hasPlace = (a: PlaceInput) =>
 
 /**
  * Resolve a place. Without a state or country qualifier the geocoder's first candidate is often the wrong town
- * ("Breckenridge" is Breckenridge, Texas first; "Alta" is Alta, Iowa), so a town close to a SNOTEL station wins.
+ * ("Breckenridge" is Breckenridge, Texas first; "Alta" is Alta, Iowa), so a place close to a SNOTEL station wins.
  */
 /** US places only: SNOTEL is a US network, and the country filter keeps foreign namesakes out of the 30 candidates. */
 export const geocodeUrl = (name: string) => `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=30&language=en&format=json&countryCode=US`;
@@ -213,11 +214,11 @@ export async function resolvePlace(f: FetchText, a: PlaceInput, stations: Statio
     matched = hit.length > 0;
     if (hit.length) pool = hit;
   }
-  // Among candidates with a SNOTEL station within maxMiles, a populated place closest to a station wins (mountain towns over
-  // namesakes elsewhere, the town over its airport); a peak or pass is used when no town qualifies.
+  // Among candidates with a SNOTEL station within maxMiles, an exact name match wins over a longer name (the town over
+  // "Breckenridge Airport", the peak over "Mount Hood Parkdale"), then the one closest to a station (mountain places over namesakes).
   const gap = (r: any) => Math.min(...stations.map((s) => milesBetween(Number(r.latitude), Number(r.longitude), s.latitude, s.longitude)));
-  const town = (r: any) => (/^PPL/.test(String(r.feature_code ?? '')) ? 0 : 1);
-  const scored = pool.map((r) => ({ r, d: gap(r) })).filter((x) => x.d <= maxMiles).sort((x, y) => town(x.r) - town(y.r) || x.d - y.d);
+  const exact = (r: any) => (norm(String(r.name ?? '')) === norm(name) ? 0 : 1);
+  const scored = pool.map((r) => ({ r, d: gap(r) })).filter((x) => x.d <= maxMiles).sort((x, y) => exact(x.r) - exact(y.r) || x.d - y.d);
   const pick = scored.length ? scored[0].r : pool[0];
   const lat = Number(pick.latitude), lon = Number(pick.longitude);
   checkLatLon(lat, lon);
@@ -386,7 +387,13 @@ export async function snowpackByState(f: FetchText, a: StateArgs, now = new Date
   const top = Math.min(Math.max(Math.trunc(Number(a.top ?? 10)) || 10, 1), 200);
   const sort = a.sort ?? 'depth';
   const stations = (await loadStations(f)).filter((s) => s.state === st);
-  const data = await readData(f, [`*:${st}:SNTL`], addDays(today, -10), today, DATA_TTL);
+  // A statewide wildcard read (*:UT:SNTL) with medians took 18 to 22 s at AWDB (measured 2026-11-17); 36 named stations took about 5 s.
+  // So the state is read as parallel chunks of STATE_CHUNK named stations (at most 5 reads for the largest state, Utah, 141).
+  const chunks: string[][] = [];
+  for (let i = 0; i < stations.length; i += STATE_CHUNK) chunks.push(stations.slice(i, i + STATE_CHUNK).map((s) => s.triplet));
+  const parts = await Promise.all(chunks.map((c) => readData(f, c, addDays(today, -10), today, DATA_TTL)));
+  const data = new Map<string, StationData>();
+  for (const m of parts) for (const [k, v] of m) data.set(k, v);
   const rows = stations.map((s) => ({ ...stationRow(s), ...snapshot(data.get(s.triplet), today) }));
   const recent = rows.filter((r) => r.date !== null && (r.days_old ?? 99) <= 3);
   const withSnow = recent.filter((r) => (r.snow_depth_in ?? 0) > 0);
@@ -397,6 +404,9 @@ export async function snowpackByState(f: FetchText, a: StateArgs, now = new Date
   const pcts = withMed.map((r) => r.pct_of_median as number).sort((x, y) => x - y);
   const medianPct = pcts.length ? (pcts.length % 2 ? pcts[(pcts.length - 1) / 2] : Math.round((pcts[pcts.length / 2 - 1] + pcts[pcts.length / 2]) / 2)) : null;
   const zeroMedian = recent.filter((r) => r.median_swe_in === 0).length;
+  const meds = withMed.map((r) => r.median_swe_in as number).sort((x, y) => x - y);
+  const typicalMedian = meds.length ? meds[Math.floor(meds.length / 2)] : null;
+  const smallMedians = typicalMedian !== null && typicalMedian < 3;
   const key: Record<string, (r: any) => number | string> = {
     depth: (r) => r.snow_depth_in ?? -1, swe: (r) => r.swe_in ?? -1, pct_of_median: (r) => r.pct_of_median ?? -1,
     elevation: (r) => r.elevation_ft, name: (r) => r.name,
@@ -410,14 +420,15 @@ export async function snowpackByState(f: FetchText, a: StateArgs, now = new Date
     `${STATES[st]} SNOTEL snowpack as of ${latest}: ${recent.length} of ${stations.length} active stations reported in the last 3 days, ${withSnow.length} with snow on the ground. ` +
     (index !== null ? `Snow water equivalent is ${index}% of the 30-year median, summed over ${withMed.length} stations with a median above 0 (station median ${medianPct}%). ` : 'No station has a 30-year median above 0 for the date, so there is no percent of median yet. ') +
     (deepest && (deepest.snow_depth_in ?? 0) > 0 ? `Deepest: ${deepest.name} ${deepest.snow_depth_in} in. ` : '') +
-    (zeroMedian ? `Early or late season: ${zeroMedian} stations have a median of 0 for the date. ` : '') +
+    (zeroMedian ? `${zeroMedian} stations have a median of 0 for the date. ` : '') +
+    (smallMedians ? `The typical median is only ${typicalMedian} in of SWE for the date (early or late season), so station percents swing widely; the summed percent is steadier. ` : '') +
     `By ${sort === 'pct_of_median' ? 'percent of median' : sort}: ${listed}.`;
   return {
     summary,
     state: st, state_name: STATES[st],
     active_stations: stations.length, reporting_last_3_days: recent.length, with_snow: withSnow.length,
     swe_pct_of_median: index, swe_pct_of_median_method: 'sum of current snow water equivalent / sum of the 30-year median for the date, over reporting stations whose median is above 0',
-    stations_in_percent: withMed.length, station_median_pct_of_median: medianPct, stations_with_zero_median: zeroMedian,
+    stations_in_percent: withMed.length, station_median_pct_of_median: medianPct, stations_with_zero_median: zeroMedian, typical_median_swe_in: typicalMedian,
     sort, stations: sorted,
     as_of: latest,
     source: SOURCE,
