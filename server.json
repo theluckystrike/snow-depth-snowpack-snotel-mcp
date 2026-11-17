@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.theluckystrike/snow-depth-snowpack-snotel-mcp",
+  "title": "Snow Depth and Snowpack (SNOTEL) MCP",
+  "description": "SNOTEL snow depth, snowpack and percent of median for western US mountain sites, from USDA NRCS.",
+  "version": "1.0.0",
+  "repository": {
+    "url": "https://github.com/theluckystrike/snow-depth-snowpack-snotel-mcp",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://snow-depth-snowpack-snotel-mcp.lipmichal.workers.dev/mcp"
+    }
+  ]
+}

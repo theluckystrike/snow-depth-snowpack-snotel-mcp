@@ -1,0 +1,6 @@
+[
+  ["snow_depth", {"location": "Breckenridge, CO"}],
+  ["snowpack_by_state", {"state": "CO", "top": 5}],
+  ["snow_depth_history", {"station": "Berthoud Summit"}],
+  ["snotel_stations", {"location": "Alta, UT", "max_miles": 15}]
+]

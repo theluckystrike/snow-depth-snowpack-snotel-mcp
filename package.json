@@ -1,0 +1,56 @@
+{
+  "name": "snow-depth-snowpack-snotel-mcp",
+  "version": "1.0.0",
+  "description": "Snow depth and snowpack MCP server: today's SNOTEL snow depth, snow water equivalent and percent of median for any western US mountain place or station, statewide snowpack and season history from USDA NRCS. Hosted, no key.",
+  "type": "module",
+  "license": "MIT",
+  "author": "theluckystrike",
+  "mcpName": "io.github.theluckystrike/snow-depth-snowpack-snotel-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/theluckystrike/snow-depth-snowpack-snotel-mcp"
+  },
+  "homepage": "https://www.mcpstamp.com/servers/",
+  "bin": {
+    "snow-depth-snowpack-snotel-mcp": "dist/stdio.js"
+  },
+  "main": "dist/stdio.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test",
+    "start": "node dist/stdio.js",
+    "deploy": "npx wrangler@4 deploy",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "snow-depth",
+    "snowpack",
+    "snotel",
+    "snow-water-equivalent",
+    "snow-report",
+    "usda-nrcs",
+    "skiing",
+    "backcountry",
+    "water-supply",
+    "cloudflare-workers"
+  ]
+}
